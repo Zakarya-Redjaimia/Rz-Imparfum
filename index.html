@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luxury Impact Parfum RZ</title>
+<style>
+:root{--bg:#f7fafc;--card:#fff;--ink:#1a202c;--gold:#d69e2e;--line:#e2e8f0}
+@media(prefers-color-scheme:dark){:root{--bg:#171923;--card:#2d3748;--ink:#f7fafc;--line:#4a5568}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:linear-gradient(135deg,#1a202c,#2d3748);color:#fff;padding:18px;text-align:center}
+nav{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:12px}
+button,.btn{border:0;border-radius:8px;padding:8px 14px;cursor:pointer;background:#3182ce;color:#fff;font-size:14px}
+button.g{background:#38a169}button.r{background:#e53e3e}button.s{background:#718096}
+main{max-width:1000px;margin:auto;padding:12px}
+.grid{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;width:250px;padding:14px;text-align:center}
+.card img.p{width:100%;height:170px;object-fit:cover;border-radius:8px}
+.price{color:var(--gold);font-weight:700;font-size:18px}
+form{display:grid;gap:10px;max-width:380px;margin:20px auto}
+input,select{padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+table{width:100%;border-collapse:collapse;background:var(--card)}td,th{padding:8px;border:1px solid var(--line);text-align:center}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1a202c;color:#fff;padding:10px 18px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<header><h2 style="margin:0">✨ Luxury Impact Parfum RZ ✨</h2></header>
+<nav id="nav"></nav>
+<main id="view"></main>
+<div id="msg"></div>
+<script>
+const API = "https://YOUR-HF-USERNAME-YOUR-SPACE.hf.space"; // <-- change after deploying the backend
+let S = {token: localStorage.token || "", user: JSON.parse(localStorage.user || "null"),
+         cur: localStorage.cur || "DA", cfg: {currencies: {DA:{rate:220,symbol:"DA"}}}};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const toast = t => { const m=$("#msg"); m.textContent=t; m.style.display="block"; setTimeout(()=>m.style.display="none",2500); };
+
+async function api(path, o = {}) {
+  const h = {...(o.headers||{})};
+  if (S.token) h.Authorization = "Bearer " + S.token;
+  if (o.json) { h["Content-Type"]="application/json"; o.body = JSON.stringify(o.json); }
+  const r = await fetch(API + path, {...o, headers: h});
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.status);
+  return o.blob ? r.blob() : r.json();
+}
+const money = (amt, from) => {
+  const C = S.cfg.currencies; const v = amt / C[from].rate * C[S.cur].rate;
+  return v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + " " + C[S.cur].symbol;
+};
+const go = fn => async (...a) => { try { await fn(...a); } catch(e) { toast(e.message); } };
+
+function nav() {
+  const cur = Object.keys(S.cfg.currencies).map(c=>`<option ${c==S.cur?"selected":""}>${c}</option>`).join("");
+  $("#nav").innerHTML = `<button onclick="shop()">🛍️ المتجر</button>` +
+    (S.user ? `<button class="g" onclick="cart()">🛒 السلة</button>` +
+      (S.user.role=="admin" ? `<button class="s" onclick="admin()">⚙️ لوحة التحكم</button>` : "") +
+      `<button class="r" onclick="logout()">🚪 خروج (${esc(S.user.name)})</button>`
+      : `<button onclick="loginView()">🔑 دخول</button><button class="s" onclick="registerView()">📝 حساب جديد</button>`) +
+    `<select onchange="S.cur=localStorage.cur=this.value;shop()">${cur}</select>`;
+}
+
+const shop = go(async () => {
+  nav();
+  const ps = await api("/api/products");
+  $("#view").innerHTML = ps.length ? `<div class="grid">` + ps.map(p => `
+    <div class="card">
+      <img class="p" src="${API}/api/products/${p.id}/image" alt="">
+      <h3>${esc(p.name)}</h3><div class="price">${money(p.price,p.currency)}</div>
+      <a href="https://www.google.com/search?q=${encodeURIComponent(p.name+" perfume ingredients notes")}" target="_blank">🔍 المكونات</a><br>
+      <img src="${API}/api/products/${p.id}/qr" width="75" height="75" alt="QR"><br>
+      <button class="g" onclick="addCart(${p.id})">🛒 أضف للسلة</button>
+    </div>`).join("") + `</div>` : "<p style='text-align:center'>لا توجد عطور حالياً.</p>";
+});
+
+const addCart = go(async id => {
+  if (!S.user) return loginView();
+  const q = parseInt(prompt("الكمية:", "1")); if (!q || q < 1) return;
+  await api("/api/cart", {method:"POST", json:{product_id:id, quantity:q}}); toast("تمت الإضافة ✔");
+});
+
+const cart = go(async () => {
+  if (!S.user) return loginView();
+  nav(); const rows = await api("/api/cart"); let total = 0;
+  if (!rows.length) { $("#view").innerHTML = "<p style='text-align:center'>🛒 السلة فارغة.</p>"; return; }
+  const C = S.cfg.currencies;
+  $("#view").innerHTML = `<table><tr><th>العطر</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th></tr>` +
+    rows.map(r => { total += r.price / C[r.currency].rate * C[S.cur].rate * r.quantity;
+      return `<tr><td>${esc(r.name)}</td><td>${money(r.price,r.currency)}</td><td>${r.quantity}</td><td>${money(r.price*r.quantity,r.currency)}</td></tr>`; }).join("") +
+    `</table><h3 style="text-align:center">الإجمالي: <span class="price">${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${C[S.cur].symbol}</span></h3>
+    <div style="text-align:center"><button class="g" onclick="invoice()">📄 فاتورة PDF</button>
+    <button class="r" onclick="clearCart()">🗑️ تفريغ</button></div>`;
+});
+const clearCart = go(async () => { await api("/api/cart",{method:"DELETE"}); cart(); });
+const invoice = go(async () => {
+  const b = await api("/api/invoice?currency="+S.cur, {blob:true});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "Invoice_Parfum_RZ.pdf"; a.click();
+});
+
+function authForm(title, fields, onsubmit) {
+  nav(); $("#view").innerHTML = `<form id="f"><h3>${title}</h3>${fields}<button>${title}</button></form>`;
+  $("#f").onsubmit = go(async e => { e.preventDefault(); await onsubmit(Object.fromEntries(new FormData(e.target))); });
+}
+function loginView() {
+  authForm("تسجيل الدخول", `<input name="login_id" placeholder="اسم المستخدم أو البريد" required>
+    <input name="password" type="password" placeholder="كلمة المرور" required>`, async d => {
+    const r = await api("/api/login", {method:"POST", json:d});
+    S.token = localStorage.token = r.token; S.user = r.user; localStorage.user = JSON.stringify(r.user);
+    shop();
+  });
+}
+function registerView() {
+  authForm("إنشاء حساب", `<input name="name" placeholder="الاسم الكامل" required><input name="username" placeholder="اسم المستخدم" required>
+    <input name="email" type="email" placeholder="البريد الإلكتروني" required><input name="password" type="password" placeholder="كلمة المرور" required>
+    <select name="role"><option value="user">مستخدم عادي</option><option value="admin">مدير (إن لم يوجد مدير)</option></select>`, async d => {
+    await api("/api/register", {method:"POST", json:d}); toast("تم إنشاء الحساب، سجّل الدخول"); loginView();
+  });
+}
+function logout() { localStorage.clear(); S.token=""; S.user=null; S.cur="DA"; shop(); }
+
+const admin = go(async () => {
+  nav(); const ps = await api("/api/products");
+  const opts = Object.keys(S.cfg.currencies).map(c=>`<option>${c}</option>`).join("");
+  $("#view").innerHTML = `<form id="f"><h3>➕ إضافة عطر</h3><input name="name" placeholder="الاسم" required>
+    <input name="price" type="number" step="any" placeholder="السعر" required><select name="currency">${opts}</select>
+    <input name="image" type="file" accept="image/*" required><button class="g">إضافة</button></form>
+    <table><tr><th>#</th><th>العطر</th><th>السعر</th><th></th></tr>` + ps.map(p =>
+    `<tr><td>${p.id}</td><td>${esc(p.name)}</td><td>${p.price} ${p.currency}</td>
+     <td><button onclick="editP(${p.id},'${esc(p.name).replace(/'/g,"")}',${p.price},'${p.currency}')">✏️</button>
+     <button class="r" onclick="delP(${p.id})">🗑️</button></td></tr>`).join("") + `</table>`;
+  $("#f").onsubmit = go(async e => { e.preventDefault();
+    await api("/api/products", {method:"POST", body:new FormData(e.target)}); toast("تمت الإضافة ✔"); admin(); });
+});
+const delP = go(async id => { if (confirm("حذف؟")) { await api("/api/products/"+id,{method:"DELETE"}); admin(); } });
+const editP = go(async (id, name, price, currency) => {
+  const n = prompt("الاسم:", name); if (n === null) return;
+  const p = prompt("السعر (" + currency + "):", price); if (p === null) return;
+  const fd = new FormData(); fd.append("name", n); fd.append("price", p); fd.append("currency", currency);
+  await api("/api/products/"+id, {method:"PUT", body:fd}); admin();
+});
+
+api("/api/config").then(c => { S.cfg = c; }).catch(()=>{}).finally(shop);
+</script>
+</body>
+</html>
