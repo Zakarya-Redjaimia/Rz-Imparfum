@@ -11,7 +11,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 DATABASE_URL = os.environ["DATABASE_URL"]      # Neon connection string (sslmode=require)
 JWT_SECRET = os.environ["JWT_SECRET"]          # long random string, set in HF Space secrets
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")  # e.g. https://your-app.vercel.app
+FRONTEND_ORIGIN = "https://rz-imparfum.vercel.app/" #os.environ.get("FRONTEND_ORIGIN", "*")  # e.g. https://your-app.vercel.app
 
 STORE_BRAND = "Luxury Impact Parfum RZ"
 STORE_PHONE = "0542932846"
