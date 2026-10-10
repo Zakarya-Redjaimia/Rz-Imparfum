@@ -9,9 +9,12 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-DATABASE_URL = os.environ["DATABASE_URL"]      # Neon connection string (sslmode=require)
-JWT_SECRET = os.environ["JWT_SECRET"]          # long random string, set in HF Space secrets
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "https://rz-imparfum.vercel.app")  # e.g. https://your-app.vercel.app
+DATABASE_URL = os.environ.get("DATABASE_URL")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not DATABASE_URL or not JWT_SECRET:
+    raise SystemExit("Missing DATABASE_URL or JWT_SECRET.")
+
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "https://rz-imparfum.vercel.app")
 
 STORE_BRAND = "Luxury Impact Parfum RZ"
 STORE_PHONE = "0542932846"
@@ -24,7 +27,6 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
 CORS(app, origins=FRONTEND_ORIGIN, allow_headers=["Authorization", "Content-Type"])
 
-# ---------- DB ----------
 def q(sql, args=(), fetch=None):
     conn = psycopg2.connect(DATABASE_URL)
     try:
@@ -36,20 +38,22 @@ def q(sql, args=(), fetch=None):
         conn.close()
 
 def init_db():
-    q("""CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL, name TEXT NOT NULL, role TEXT DEFAULT 'user')""")
-    q("""CREATE TABLE IF NOT EXISTS products (
-            id SERIAL PRIMARY KEY, name TEXT NOT NULL, price DOUBLE PRECISION NOT NULL,
-            currency TEXT NOT NULL, image BYTEA, image_type TEXT)""")
-    q("""CREATE TABLE IF NOT EXISTS cart (
-            id SERIAL PRIMARY KEY,
-            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            quantity INT NOT NULL CHECK (quantity > 0), UNIQUE (user_id, product_id))""")
+    try:
+        q("""CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL, name TEXT NOT NULL, role TEXT DEFAULT 'user')""")
+        q("""CREATE TABLE IF NOT EXISTS products (
+                id SERIAL PRIMARY KEY, name TEXT NOT NULL, price DOUBLE PRECISION NOT NULL,
+                currency TEXT NOT NULL, image BYTEA, image_type TEXT)""")
+        q("""CREATE TABLE IF NOT EXISTS cart (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                quantity INT NOT NULL CHECK (quantity > 0), UNIQUE (user_id, product_id))""")
+    except Exception as e:
+        print("DB Init Error:", e)
 init_db()
 
-# ---------- Auth ----------
 def make_token(u):
     payload = {"id": u["id"], "role": u["role"],
                "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)}
@@ -99,7 +103,6 @@ def login():
         return jsonify(error="Wrong credentials"), 401
     return jsonify(token=make_token(u), user=public_user(u))
 
-# ---------- Products ----------
 @app.get("/api/config")
 def config():
     return jsonify(brand=STORE_BRAND, currencies=CURRENCIES)
@@ -165,7 +168,6 @@ def delete_product(pid):
     q("DELETE FROM products WHERE id=%s", (pid,))
     return jsonify(ok=True)
 
-# ---------- Cart ----------
 def cart_rows(uid):
     return q("""SELECT c.id, c.product_id, c.quantity, p.name, p.price, p.currency
                 FROM cart c JOIN products p ON p.id=c.product_id WHERE c.user_id=%s ORDER BY c.id""",
@@ -202,7 +204,7 @@ def invoice():
     if cur not in CURRENCIES: cur = "DA"
     rows = cart_rows(g.user["id"])
     if not rows: return jsonify(error="Cart is empty"), 400
-    sym = cur  # use ISO code: built-in PDF fonts can't render all symbols
+    sym = cur
     data, total = [["Item", "Price", "Qty", "Total"]], 0.0
     for r in rows:
         p = convert(r["price"], r["currency"], cur); t = p * r["quantity"]; total += t
@@ -218,7 +220,7 @@ def invoice():
                              ("GRID", (0, 0), (-1, -1), .5, colors.HexColor("#cbd5e0")),
                              ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold")]))
     doc.build([Paragraph(f"<b>{STORE_BRAND}</b>", st["Heading1"]), Paragraph("OFFICIAL INVOICE", st["Normal"]),
-               Spacer(1, 10), tbl])
+                Spacer(1, 10), tbl])
     return Response(buf.getvalue(), mimetype="application/pdf")
 
 @app.get("/healthz")
