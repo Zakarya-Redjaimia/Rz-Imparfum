@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/app.py"
+      "destination": "/api/index.py"
     },
     {
       "source": "/healthz",
-      "destination": "/api/app.py"
+      "destination": "/api/index.py"
     },
     {
       "source": "/(.*)",
